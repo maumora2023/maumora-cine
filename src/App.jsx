@@ -218,6 +218,7 @@ const PRIVATE_IMPORT_LIMITS = {
 };
 const CHANNEL_FAVORITES_KEY = 'maumora-channel-favorites';
 const FAVORITE_CHANNEL_CATEGORY = 'Favoritos';
+const CUSTOM_M3U_LISTS_KEY = 'maumora-custom-m3u-lists';
 
 function App() {
   const [splashDone, setSplashDone] = useState(false);
@@ -2926,6 +2927,33 @@ function TvLiveScreen({ mode = 'tv', tvData = [], channelFavorites = [], toggleC
   const [selectedCategory, setSelectedCategory] = useState('Todos');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('Cargando lista...');
+  const [showListForm, setShowListForm] = useState(false);
+  const [customListName, setCustomListName] = useState('');
+  const [customListText, setCustomListText] = useState('');
+  const [customListError, setCustomListError] = useState('');
+  const [customLists, setCustomLists] = useState(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(CUSTOM_M3U_LISTS_KEY) || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+  const customSources = useMemo(() => customLists.map((list) => {
+    const parsedChannels = parseM3u(list.text || '', list.name || 'Lista M3U')
+      .filter((channel) => isValidChannelTitle(channel.name))
+      .reduce(dedupeChannelsReducer, []);
+
+    return {
+      group: 'Listas agregadas',
+      name: list.name || 'Lista M3U',
+      url: `custom:${list.id}`,
+      id: list.id,
+      custom: true,
+      channels: parsedChannels,
+      error: parsedChannels.length ? '' : 'La lista no tiene canales compatibles.',
+    };
+  }), [customLists]);
   const visibleSources = useMemo(() => {
     const mappedSources = availableSources.map((source) => ({
       ...source,
@@ -2959,8 +2987,46 @@ function TvLiveScreen({ mode = 'tv', tvData = [], channelFavorites = [], toggleC
   }, [sourceIndex, visibleSources.length]);
 
   useEffect(() => {
-    setAvailableSources(tvData.length ? tvData : buildInitialTvSources());
-  }, [tvData]);
+    const baseSources = tvData.length ? tvData : buildInitialTvSources();
+    setAvailableSources([...baseSources, ...customSources]);
+  }, [tvData, customSources]);
+
+  const saveCustomLists = (nextLists) => {
+    setCustomLists(nextLists);
+    localStorage.setItem(CUSTOM_M3U_LISTS_KEY, JSON.stringify(nextLists));
+  };
+
+  const addCustomList = () => {
+    const text = customListText.trim();
+    const name = customListName.trim() || `Lista M3U ${customLists.length + 1}`;
+    const parsedChannels = parseM3u(text, name).filter((channel) => isValidChannelTitle(channel.name));
+
+    if (!text || !text.includes('#EXTM3U') || !parsedChannels.length) {
+      setCustomListError('Pega una lista M3U valida con canales.');
+      return;
+    }
+
+    const nextLists = [
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        text,
+      },
+      ...customLists,
+    ].slice(0, 8);
+
+    saveCustomLists(nextLists);
+    setCustomListName('');
+    setCustomListText('');
+    setCustomListError('');
+    setShowListForm(false);
+    setSourceIndex(0);
+  };
+
+  const removeCustomList = (id) => {
+    saveCustomLists(customLists.filter((list) => list.id !== id));
+    setSourceIndex(0);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -3004,18 +3070,56 @@ function TvLiveScreen({ mode = 'tv', tvData = [], channelFavorites = [], toggleC
           <h1>{isRadioMode ? 'Radio' : 'Television'}</h1>
           <p>{isRadioMode ? 'Emisoras separadas de las listas M3U para escuchar en directo.' : 'Canales de television separados de las emisoras de radio.'}</p>
         </div>
-        <select
-          className="tv-source-select"
-          value={sourceIndex}
-          onChange={(event) => setSourceIndex(Number(event.target.value))}
-        >
-          {visibleSources.map((source, index) => (
-            <option key={source.url} value={index}>
-              {source.name}
-            </option>
-          ))}
-        </select>
+        <div className="tv-source-tools">
+          <select
+            className="tv-source-select"
+            value={sourceIndex}
+            onChange={(event) => setSourceIndex(Number(event.target.value))}
+          >
+            {visibleSources.map((source, index) => (
+              <option key={source.url} value={index}>
+                {source.name}
+              </option>
+            ))}
+          </select>
+          <button className="tv-add-list-button" type="button" onClick={() => setShowListForm((value) => !value)}>
+            {showListForm ? <X size={18} /> : <Plus size={18} />}
+            <span>{showListForm ? 'Cerrar' : 'Agregar lista'}</span>
+          </button>
+        </div>
       </div>
+
+      {showListForm && (
+        <div className="m3u-panel">
+          <div className="m3u-fields">
+            <input
+              value={customListName}
+              onChange={(event) => setCustomListName(event.target.value)}
+              placeholder="Nombre de la lista"
+            />
+            <textarea
+              value={customListText}
+              onChange={(event) => setCustomListText(event.target.value)}
+              placeholder="Pega aqui tu lista M3U"
+              rows={7}
+            />
+          </div>
+          <div className="m3u-actions">
+            <button type="button" onClick={addCustomList}>Guardar lista</button>
+            {customListError && <span>{customListError}</span>}
+          </div>
+          {customLists.length > 0 && (
+            <div className="m3u-saved">
+              {customLists.map((list) => (
+                <button key={list.id} type="button" onClick={() => removeCustomList(list.id)}>
+                  <X size={14} />
+                  <span>{list.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="tv-layout">
         <div className="tv-player-panel">
