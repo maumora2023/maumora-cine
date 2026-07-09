@@ -1360,7 +1360,6 @@ function MoviesScreen({ movies, navigate, contentStats }) {
           ))}
         </div>
         <label className="year-filter">
-          <span>{YEAR_LABEL}</span>
           <select
             className="year-select"
             aria-label="Filtrar por año"
@@ -1636,7 +1635,6 @@ function AnimeScreen({ anime, navigate, contentStats }) {
           ))}
         </div>
         <label className="year-filter">
-          <span>{YEAR_LABEL}</span>
           <select
             className="year-select"
             aria-label="Filtrar por año"
