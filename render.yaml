@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: maumora-stream-proxy
+    env: node
+    plan: free
+    rootDir: render-stream-proxy
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://maumoracine.web.app,https://maumoracine.firebaseapp.com

@@ -1,0 +1,9 @@
+{
+  "appId": "com.maumora.cine",
+  "appName": "M@umora Cine",
+  "webDir": "dist",
+  "server": {
+    "url": "https://maumoracine.web.app",
+    "androidScheme": "https"
+  }
+}

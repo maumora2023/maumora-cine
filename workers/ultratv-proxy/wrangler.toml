@@ -1,0 +1,6 @@
+name = "maumora-ultratv-proxy"
+main = "src/index.js"
+compatibility_date = "2026-07-08"
+
+[vars]
+ALLOWED_ORIGIN = "https://maumoracine.web.app"

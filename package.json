@@ -1,0 +1,40 @@
+{
+  "name": "enygma-cine-react",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync:data": "node scripts/sync-data.mjs",
+    "sync:catalog": "node scripts/sync-data.mjs",
+    "predev": "node scripts/sync-data.mjs",
+    "dev": "vite --host 127.0.0.1",
+    "prebuild": "node scripts/sync-data.mjs && node scripts/sync-tv.mjs",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "firebase:login": "npx firebase login",
+    "deploy": "npm run build && npx firebase deploy",
+    "deploy:hosting": "npm run build && npx firebase deploy --only hosting",
+    "android:add": "npx cap add android",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:apk": "npm run android:sync && cd android && gradlew.bat assembleDebug",
+    "android:icons": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-android-icons.ps1",
+    "android:release": "npm run android:sync && npm run android:icons && cd android && gradlew.bat assembleRelease",
+    "android:release:copy": "powershell -NoProfile -Command \"Copy-Item -LiteralPath 'android/app/build/outputs/apk/release/app-release.apk' -Destination 'android/app/build/outputs/apk/release/Mumora-Cine-release.apk' -Force\""
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "firebase": "^12.15.0",
+    "hls.js": "^1.6.16",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "vite": "^6.0.7"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.1",
+    "firebase-tools": "^15.22.4"
+  }
+}
