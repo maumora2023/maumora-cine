@@ -3025,15 +3025,22 @@ function TvLiveScreen({ mode = 'tv', tvData = [], channelFavorites = [], toggleC
     let text = input;
     try {
       if (/^https?:\/\//i.test(input)) {
-        const response = await fetch(proxiedM3uListUrl(input), {
-          headers: { accept: 'application/x-mpegurl,text/plain,*/*' },
-        });
-        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-        text = await response.text();
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 22000);
+        try {
+          const response = await fetch(proxiedM3uListUrl(input), {
+            headers: { accept: 'application/x-mpegurl,text/plain,*/*' },
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+          text = await response.text();
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
       }
     } catch {
       setCustomListLoading(false);
-      setCustomListError('No se pudo cargar esa URL. Prueba pegando el contenido completo de la lista.');
+      setCustomListError('No se pudo cargar esa URL. Prueba pegando el contenido completo de la lista M3U.');
       return;
     }
 
