@@ -4,6 +4,7 @@ const defaultBaseUrl = 'https://enygmacinehd.fun';
 const dataDir = new URL('../public/data/', import.meta.url);
 const pageSize = Number(process.env.CATALOG_PAGE_SIZE || 120);
 const blockedPlaybackHosts = new Set(['ok.ru', 'www.ok.ru', 'm.ok.ru']);
+const blockedImageHosts = new Set(['whats-on-netflix.com', 'www.whats-on-netflix.com']);
 const ofutbolBaseUrl = 'https://ofutbol.jdoxx.com';
 
 await loadDotEnv();
@@ -61,8 +62,32 @@ function pick(item, keys, fallback = null) {
 
 function pickImage(item, keys) {
   const value = pick(item, keys);
-  if (typeof value === 'string') return value;
-  return pick(value || {}, ['url', 'src', 'path']);
+  return cleanImageUrl(typeof value === 'string' ? value : pick(value || {}, ['url', 'src', 'path']));
+}
+
+function cleanImageUrl(value) {
+  if (!value) return null;
+
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return blockedImageHosts.has(host) ? null : value;
+  } catch {
+    return value;
+  }
+}
+
+function cleanBlockedImages(data) {
+  if (Array.isArray(data)) return data.map(cleanBlockedImages);
+  if (!data || typeof data !== 'object') return data;
+
+  return Object.fromEntries(
+    Object.entries(data).map(([key, value]) => {
+      if (['posterUrl', 'backdropUrl', 'logoUrl', 'image', 'poster', 'backdrop'].includes(key)) {
+        return [key, typeof value === 'string' ? cleanImageUrl(value) : cleanBlockedImages(value)];
+      }
+      return [key, cleanBlockedImages(value)];
+    }),
+  );
 }
 
 function normalizeYear(value) {
@@ -502,7 +527,7 @@ if (isCustomCatalog && !process.env.STREAMFLIX_HOME_ENDPOINT && !process.env.CAT
 }
 
 await Promise.all([
-  saveJson('home.json', home),
+  saveJson('home.json', cleanBlockedImages(home)),
   saveJson('movies.json', playableMovies),
   saveJson('series.json', sortedSeries),
   saveJson('anime.json', sortedAnime),
