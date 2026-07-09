@@ -3009,11 +3009,13 @@ function TvLiveScreen({ mode = 'tv', tvData = [], channelFavorites = [], toggleC
   };
 
   const addCustomList = async () => {
-    const input = customListText.trim();
-    const name = customListName.trim() || `Lista M3U ${customLists.length + 1}`;
+    const nameValue = customListName.trim();
+    const textValue = customListText.trim();
+    const input = textValue || (/^https?:\/\//i.test(nameValue) ? nameValue : '');
+    const name = /^https?:\/\//i.test(nameValue) ? `Lista M3U ${customLists.length + 1}` : nameValue || `Lista M3U ${customLists.length + 1}`;
 
     if (!input) {
-      setCustomListError('Pega una lista M3U valida con canales.');
+      setCustomListError('Pega una URL M3U o el contenido completo de la lista.');
       return;
     }
 
@@ -3133,7 +3135,7 @@ function TvLiveScreen({ mode = 'tv', tvData = [], channelFavorites = [], toggleC
             <input
               value={customListName}
               onChange={(event) => setCustomListName(event.target.value)}
-              placeholder="Nombre de la lista"
+              placeholder="Nombre de la lista opcional"
             />
             <textarea
               value={customListText}
