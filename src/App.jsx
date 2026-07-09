@@ -2766,6 +2766,17 @@ function proxiedLiveStreamUrl(value) {
   }
 }
 
+function proxiedM3uListUrl(value) {
+  if (!value || IS_NATIVE_APP) return value;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:') return value;
+    return proxiedLiveStreamUrl(value);
+  } catch {
+    return value;
+  }
+}
+
 function buildPlaybackCandidates(value, kind = 'movie') {
   const candidates = [];
   const add = (candidate) => {
@@ -2931,6 +2942,7 @@ function TvLiveScreen({ mode = 'tv', tvData = [], channelFavorites = [], toggleC
   const [customListName, setCustomListName] = useState('');
   const [customListText, setCustomListText] = useState('');
   const [customListError, setCustomListError] = useState('');
+  const [customListLoading, setCustomListLoading] = useState(false);
   const [customLists, setCustomLists] = useState(() => {
     try {
       const parsed = JSON.parse(localStorage.getItem(CUSTOM_M3U_LISTS_KEY) || '[]');
@@ -2996,13 +3008,38 @@ function TvLiveScreen({ mode = 'tv', tvData = [], channelFavorites = [], toggleC
     localStorage.setItem(CUSTOM_M3U_LISTS_KEY, JSON.stringify(nextLists));
   };
 
-  const addCustomList = () => {
-    const text = customListText.trim();
+  const addCustomList = async () => {
+    const input = customListText.trim();
     const name = customListName.trim() || `Lista M3U ${customLists.length + 1}`;
+
+    if (!input) {
+      setCustomListError('Pega una lista M3U valida con canales.');
+      return;
+    }
+
+    setCustomListLoading(true);
+    setCustomListError('');
+
+    let text = input;
+    try {
+      if (/^https?:\/\//i.test(input)) {
+        const response = await fetch(proxiedM3uListUrl(input), {
+          headers: { accept: 'application/x-mpegurl,text/plain,*/*' },
+        });
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        text = await response.text();
+      }
+    } catch {
+      setCustomListLoading(false);
+      setCustomListError('No se pudo cargar esa URL. Prueba pegando el contenido completo de la lista.');
+      return;
+    }
+
     const parsedChannels = parseM3u(text, name).filter((channel) => isValidChannelTitle(channel.name));
 
-    if (!text || !text.includes('#EXTM3U') || !parsedChannels.length) {
-      setCustomListError('Pega una lista M3U valida con canales.');
+    if (!text.includes('#EXTM3U') || !parsedChannels.length) {
+      setCustomListLoading(false);
+      setCustomListError('La lista no tiene canales compatibles.');
       return;
     }
 
@@ -3019,6 +3056,7 @@ function TvLiveScreen({ mode = 'tv', tvData = [], channelFavorites = [], toggleC
     setCustomListName('');
     setCustomListText('');
     setCustomListError('');
+    setCustomListLoading(false);
     setShowListForm(false);
     setSourceIndex(0);
   };
@@ -3100,12 +3138,14 @@ function TvLiveScreen({ mode = 'tv', tvData = [], channelFavorites = [], toggleC
             <textarea
               value={customListText}
               onChange={(event) => setCustomListText(event.target.value)}
-              placeholder="Pega aqui tu lista M3U"
+              placeholder="Pega aqui una URL M3U o el contenido completo de la lista"
               rows={7}
             />
           </div>
           <div className="m3u-actions">
-            <button type="button" onClick={addCustomList}>Guardar lista</button>
+            <button type="button" onClick={addCustomList} disabled={customListLoading}>
+              {customListLoading ? 'Cargando...' : 'Guardar lista'}
+            </button>
             {customListError && <span>{customListError}</span>}
           </div>
           {customLists.length > 0 && (

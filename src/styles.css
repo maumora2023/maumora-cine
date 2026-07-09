@@ -2326,6 +2326,11 @@ p {
   cursor: pointer;
 }
 
+.m3u-actions button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .m3u-actions span {
   color: #ff6b73;
   font-size: 0.84rem;
