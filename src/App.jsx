@@ -206,16 +206,8 @@ const fallbackTvSources = [
   { group: 'Peliculas y series On Demand Latino', name: 'Dibujos animados', url: 'https://mametchikitty.github.io/Listas-IPTV/dibujos-animados.m3u' },
 ];
 
-const PRIVATE_TV_PROXY_URL = import.meta.env.VITE_PRIVATE_TV_PROXY_URL || '';
 const IS_NATIVE_APP = isNativeAppRuntime();
-const PRIVATE_TV_LOCAL_LIST_URL = '/data/maumora-tv.m3u';
 const WEB_STREAM_PROXY_URL = import.meta.env.VITE_WEB_STREAM_PROXY_URL || '';
-const PRIVATE_IMPORT_LIMITS = {
-  movies: 500,
-  shows: 180,
-  episodesPerShow: 80,
-  tvChannels: 900,
-};
 const CHANNEL_FAVORITES_KEY = 'maumora-channel-favorites';
 const FAVORITE_CHANNEL_CATEGORY = 'Favoritos';
 const CUSTOM_M3U_LISTS_KEY = 'maumora-custom-m3u-lists';
@@ -226,7 +218,6 @@ function App() {
   const [realMovies, setRealMovies] = useState([]);
   const [realSeries, setRealSeries] = useState([]);
   const [realAnime, setRealAnime] = useState([]);
-  const [privateCatalog, setPrivateCatalog] = useState({ movies: [], series: [], anime: [], tvChannels: null });
   const [tvData, setTvData] = useState([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [homeData, setHomeData] = useState(null);
@@ -327,44 +318,6 @@ function App() {
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => setTvData(Array.isArray(data?.sources) ? data.sources : []))
       .catch(() => setTvData([]));
-  }, []);
-
-  useEffect(() => {
-    if (!PRIVATE_TV_PROXY_URL) return;
-
-    let cancelled = false;
-    const requestOptions = { headers: { accept: 'application/x-mpegurl,text/plain,*/*' } };
-
-    const catalogUrl = PRIVATE_TV_LOCAL_LIST_URL;
-    const tvUrl = PRIVATE_TV_LOCAL_LIST_URL;
-
-    fetch(catalogUrl, requestOptions)
-      .then((response) => (response.ok ? response.text() : Promise.reject(new Error(`${response.status} ${response.statusText}`))))
-      .then((text) => {
-        if (!cancelled) setPrivateCatalog(parsePrivateM3uCatalog(text));
-      })
-      .catch(() => {
-        if (!cancelled) setPrivateCatalog({ movies: [], series: [], anime: [], tvChannels: [] });
-      });
-
-    fetch(tvUrl, requestOptions)
-      .then((response) => (response.ok ? response.text() : Promise.reject(new Error(`${response.status} ${response.statusText}`))))
-      .then((text) => {
-        if (cancelled) return;
-        const tvChannels = parseM3u(text, 'M@umora TV privada')
-          .filter((channel) => !isRadioChannel(channel, { name: 'M@umora TV privada', group: 'M@umora privado' }) && !isVodChannel(channel, { name: 'M@umora TV privada', group: 'M@umora privado' }))
-          .filter((channel) => isValidChannelTitle(channel.name))
-          .reduce(dedupeChannelsReducer, [])
-          .slice(0, PRIVATE_IMPORT_LIMITS.tvChannels);
-        setPrivateCatalog((current) => ({ ...current, tvChannels }));
-      })
-      .catch(() => {
-        if (!cancelled) setPrivateCatalog((current) => ({ ...current, tvChannels: [] }));
-      });
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   useEffect(() => {
@@ -545,10 +498,10 @@ function App() {
     setProfile(null);
     navigate('/');
   };
-  const allMovies = mergeCatalogItems(realMovies, privateCatalog.movies);
-  const allSeries = mergeCatalogItems(realSeries, privateCatalog.series);
-  const allAnime = mergeCatalogItems(realAnime, privateCatalog.anime);
-  const allTvData = withPrivateTvSource([], privateCatalog.tvChannels);
+  const allMovies = realMovies;
+  const allSeries = realSeries;
+  const allAnime = realAnime;
+  const allTvData = buildInitialTvSources();
 
   if (!splashDone) {
     return <Splash />;
@@ -1334,11 +1287,10 @@ function MoviesScreen({ movies, navigate, contentStats }) {
           return genreMatch && yearMatch;
         });
   const visibleMovies = filteredMovies.length > 0 ? filteredMovies : allMovies;
-  const publicVisibleMovies = visibleMovies.filter((item) => !item.privateSource);
-  const featuredSourceMovies = publicVisibleMovies.length ? publicVisibleMovies : visibleMovies;
+  const featuredSourceMovies = visibleMovies;
   const featureMovies = featuredSourceMovies.filter((item) => item.backdropUrl || item.posterUrl).slice(0, 8);
   const featuredMovie = featureMovies[featureIndex % Math.max(featureMovies.length, 1)] ?? visibleMovies[0];
-  const topMovies = (publicVisibleMovies.length ? publicVisibleMovies : visibleMovies)
+  const topMovies = visibleMovies
     .filter((item) => item.posterUrl)
     .slice(0, 10)
     .map((item) => [item.titulo, item.genero?.split(',')[0] || 'Pelicula', formatYearLabel(item.año || item.titulo), item]);
@@ -1474,7 +1426,7 @@ function MoviesScreen({ movies, navigate, contentStats }) {
         <div className="movies-grid">
           {visibleMovies.map((item) => (
             <a
-              className={`movie-grid-card ${item.privateSource ? 'private-media-card' : ''}`}
+              className="movie-grid-card"
               href={item.detailUrl || `/detail/movie/${item.id}`}
               key={item.id}
               onClick={(event) => {
@@ -1486,7 +1438,7 @@ function MoviesScreen({ movies, navigate, contentStats }) {
                 <strong>{item.titulo}</strong>
                 <small>{formatGenreYear(item.genero?.split(',')[0], item.año)}</small>
               </span>
-              <div className={`movie-grid-poster ${item.privateSource ? 'private-media-poster' : ''}`}>
+              <div className="movie-grid-poster">
                 <img src={item.posterUrl} alt="" loading="lazy" />
                 <RatingBadge item={item} category="movie" contentStats={contentStats} />
                 <span className="grid-play" aria-label={`Ver ${item.titulo}`}>
@@ -2713,11 +2665,11 @@ function MoviePlayer({ src, title, poster, onEnded, kind = 'movie' }) {
 }
 
 function proxiedArchiveHlsUrl(value) {
-  if (!value || !PRIVATE_TV_PROXY_URL) return value;
+  if (!value || !WEB_STREAM_PROXY_URL) return value;
   try {
     const url = new URL(value);
     if (!url.hostname.endsWith('archive.org') || !/\.m3u8(\?|#|$)/i.test(url.pathname)) return value;
-    const proxyUrl = new URL('/stream', PRIVATE_TV_PROXY_URL);
+    const proxyUrl = new URL(WEB_STREAM_PROXY_URL);
     proxyUrl.searchParams.set('u', toBase64Url(url.toString()));
     proxyUrl.searchParams.set('kind', 'hls');
     return proxyUrl.toString();
@@ -2750,7 +2702,7 @@ function proxiedLiveStreamUrl(value) {
   if (IS_NATIVE_APP) return value;
   try {
     const url = new URL(value);
-    const activeProxy = WEB_STREAM_PROXY_URL || (PRIVATE_TV_PROXY_URL ? new URL('/stream', PRIVATE_TV_PROXY_URL).toString() : '');
+    const activeProxy = WEB_STREAM_PROXY_URL;
     if (!activeProxy) return value;
     const activeProxyUrl = new URL(activeProxy, window.location.origin);
     if (url.origin === activeProxyUrl.origin && url.pathname === activeProxyUrl.pathname) return value;
@@ -2843,17 +2795,7 @@ function isWorkerStreamUrl(value) {
 
 function proxiedImageUrl(value) {
   if (!value) return '';
-  if (!PRIVATE_TV_PROXY_URL) return value;
-
-  try {
-    const sourceUrl = new URL(value);
-    if (sourceUrl.protocol !== 'http:') return value;
-    const proxyUrl = new URL('/asset', PRIVATE_TV_PROXY_URL);
-    proxyUrl.searchParams.set('u', toBase64Url(sourceUrl.toString()));
-    return proxyUrl.toString();
-  } catch {
-    return value;
-  }
+  return value;
 }
 
 function toBase64Url(value) {
@@ -3452,21 +3394,7 @@ function normalizeChannelFavorite(channel, source, mode = 'tv') {
 }
 
 function buildInitialTvSources() {
-  return withPrivateTvSource([]);
-}
-
-function withPrivateTvSource(sources, channels = null, error = '') {
-  if (!PRIVATE_TV_PROXY_URL) return [];
-
-  return [
-    {
-      group: 'M@umora privado',
-      name: 'M@umora TV privada',
-      url: PRIVATE_TV_PROXY_URL,
-      channels: Array.isArray(channels) ? channels : [],
-      error: error || (Array.isArray(channels) ? '' : 'Cargando lista privada...'),
-    },
-  ];
+  return [];
 }
 
 function isRadioChannel(channel, source) {
@@ -3573,271 +3501,6 @@ function normalizeLiveChannelUrl(value) {
     return value;
   }
   return value;
-}
-
-function parsePrivateM3uCatalog(text) {
-  const entries = parseM3uEntries(text, 'M@umora TV privada');
-  const tvChannels = [];
-  const movies = [];
-  const seriesMap = new Map();
-  const animeMap = new Map();
-
-  entries.forEach((entry, index) => {
-    const kind = classifyPrivateM3uEntry(entry);
-    if (kind === 'movie') {
-      if (movies.length < PRIVATE_IMPORT_LIMITS.movies) {
-        const movie = privateEntryToMovie(entry, index);
-        if (isValidPrivateTitle(movie.titulo)) movies.push(movie);
-      }
-      return;
-    }
-
-    if (kind === 'series' || kind === 'anime') {
-      const episode = privateEntryToEpisode(entry, index);
-      const map = kind === 'anime' ? animeMap : seriesMap;
-      if (!map.has(episode.seriesId) && map.size >= PRIVATE_IMPORT_LIMITS.shows) return;
-      if (!isValidPrivateTitle(episode.seriesTitle)) return;
-      if (!map.has(episode.seriesId)) {
-        map.set(episode.seriesId, privateEpisodeToShow(entry, episode, kind));
-      }
-      if (map.get(episode.seriesId).episodes.length >= PRIVATE_IMPORT_LIMITS.episodesPerShow) return;
-      map.get(episode.seriesId).episodes.push(episode);
-      return;
-    }
-
-    if (tvChannels.length < PRIVATE_IMPORT_LIMITS.tvChannels && isValidPrivateTitle(entry.name)) {
-      tvChannels.push({
-        name: entry.name,
-        group: entry.group || 'M@umora TV privada',
-        logo: proxiedImageUrl(entry.logo),
-        url: normalizeLiveChannelUrl(entry.url),
-      });
-    }
-  });
-
-  return {
-    movies: sortCatalogByYearDesc(dedupeCatalogItems(movies)),
-    series: finalizePrivateShows(seriesMap, 'serie'),
-    anime: finalizePrivateShows(animeMap, 'anime'),
-    tvChannels,
-  };
-}
-
-function classifyPrivateM3uEntry(entry) {
-  const groupText = normalizeText(entry.group || '');
-  const nameText = normalizeText(`${entry.name || ''} ${entry.tvgName || ''}`);
-  const urlText = normalizeText(entry.url || '');
-  const text = `${groupText} ${nameText} ${urlText}`;
-  if (isLikelyRadioSource({ name: entry.name, group: entry.group, url: entry.url })) return 'tv';
-  if (text.includes('/series/') || hasEpisodePattern(text)) {
-    return text.includes('anime') || text.includes('animacion') ? 'anime' : 'series';
-  }
-  if (
-    urlText.includes('/movie/') ||
-    isPrivateMovieGroup(groupText) ||
-    isPrivateMovieName(nameText) ||
-    /\.(mp4|mkv|avi|mov|m4v|webm)(\?|#|$)/i.test(entry.url || '')
-  ) {
-    return text.includes('anime') || text.includes('animacion') ? 'anime' : 'movie';
-  }
-  return 'tv';
-}
-
-function isPrivateMovieGroup(value) {
-  return [
-    'pelicula',
-    'peliculas',
-    'movie',
-    'movies',
-    'vod',
-    'cine',
-    'cinema',
-    'estreno',
-    'estrenos',
-    'accion',
-    'comedia',
-    'terror',
-    'drama',
-    'suspenso',
-    'thriller',
-    'infantil',
-    'documental',
-    '24/7',
-    '24 7',
-  ].some((token) => value.includes(token));
-}
-
-function isPrivateMovieName(value) {
-  return /\b(19\d{2}|20\d{2})\b/.test(value)
-    && !/\b(s\d{1,2}e\d{1,3}|t\d{1,2}e\d{1,3}|\d{1,2}x\d{1,3})\b/i.test(value);
-}
-
-function hasEpisodePattern(value) {
-  return /\bs\d{1,2}\s*e\d{1,3}\b/i.test(value)
-    || /\b\d{1,2}x\d{1,3}\b/i.test(value)
-    || /\btemporada\s*\d{1,2}.*episodio\s*\d{1,3}\b/i.test(value)
-    || /\bt\d{1,2}\s*e\d{1,3}\b/i.test(value);
-}
-
-function privateEntryToMovie(entry, index) {
-  const title = cleanPrivateMovieTitle(entry.name || entry.tvgName || `Pelicula ${index + 1}`);
-  const id = `private-movie-${slugifyId(`${title}-${entry.url}`)}`;
-  const year = extractPrivateYear(entry.name) || extractPrivateYear(entry.group) || '';
-  return {
-    id,
-    titulo: title,
-    sinopsis: '',
-    genero: cleanPrivateGroup(entry.group) || 'Pelicula',
-    categoria: 'movie',
-    año: year,
-    posterUrl: proxiedImageUrl(entry.logo) || '/logo.png',
-    backdropUrl: proxiedImageUrl(entry.logo) || '/logo.png',
-    valoracion: '',
-    urlReproduccion: entry.url,
-    detailUrl: `/detail/movie/${id}`,
-    watchUrl: `/watch/movie/${id}`,
-    status: 'visible',
-    privateSource: true,
-  };
-}
-
-function privateEntryToEpisode(entry, index) {
-  const parsed = parsePrivateEpisodeName(entry.name || entry.tvgName || `Episodio ${index + 1}`);
-  const seriesTitle = parsed.seriesTitle || cleanPrivateMovieTitle(entry.name || `Serie ${index + 1}`);
-  const seriesId = `private-show-${slugifyId(`${seriesTitle}-${entry.group || ''}`)}`;
-  return {
-    seriesTitle,
-    seriesId,
-    temporada: String(parsed.season || 1),
-    episodio: String(parsed.episode || index + 1),
-    tituloEpisodio: parsed.episodeTitle || `Episodio ${parsed.episode || index + 1}`,
-    urlReproduccion: entry.url,
-  };
-}
-
-function privateEpisodeToShow(entry, episode, kind) {
-  const title = episode.seriesTitle || cleanPrivateMovieTitle(entry.name || 'Serie');
-  const year = extractPrivateYear(entry.name) || extractPrivateYear(entry.group) || '';
-  return {
-    id: episode.seriesId,
-    titulo: title,
-    sinopsis: '',
-    genero: cleanPrivateGroup(entry.group) || (kind === 'anime' ? 'Anime' : 'Serie'),
-    categoria: kind === 'anime' ? 'anime' : 'serie',
-    año: year,
-    posterUrl: proxiedImageUrl(entry.logo) || '/logo.png',
-    backdropUrl: proxiedImageUrl(entry.logo) || '/logo.png',
-    totalSeasons: 1,
-    totalEpisodes: 0,
-    detailUrl: `/detail/${kind === 'anime' ? 'anime' : 'serie'}/${episode.seriesId}`,
-    episodes: [],
-    status: 'visible',
-    privateSource: true,
-  };
-}
-
-function finalizePrivateShows(map, category) {
-  return sortCatalogByYearDesc(Array.from(map.values()).map((show) => {
-    const episodes = dedupeEpisodes(show.episodes);
-    const seasons = new Set(episodes.map((episode) => String(episode.temporada || '1')));
-    return {
-      ...show,
-      categoria: category,
-      totalSeasons: seasons.size || 1,
-      totalEpisodes: episodes.length,
-      episodes,
-    };
-  }));
-}
-
-function parsePrivateEpisodeName(name) {
-  const value = String(name || '').trim();
-  const patterns = [
-    /^(.*?)\s*[-_. ]+s(\d{1,2})\s*e(\d{1,3})\s*[-_. ]*(.*)$/i,
-    /^(.*?)\s*[-_. ]+(\d{1,2})x(\d{1,3})\s*[-_. ]*(.*)$/i,
-    /^(.*?)\s*[-_. ]+t(\d{1,2})\s*e(\d{1,3})\s*[-_. ]*(.*)$/i,
-    /^(.*?)\s*temporada\s*(\d{1,2}).*?episodio\s*(\d{1,3})\s*[-_. ]*(.*)$/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = value.match(pattern);
-    if (match) {
-      return {
-        seriesTitle: cleanPrivateMovieTitle(match[1]),
-        season: Number(match[2]) || 1,
-        episode: Number(match[3]) || 1,
-        episodeTitle: cleanPrivateMovieTitle(match[4] || `Episodio ${Number(match[3]) || 1}`),
-      };
-    }
-  }
-
-  return {
-    seriesTitle: cleanPrivateMovieTitle(value),
-    season: 1,
-    episode: 1,
-    episodeTitle: 'Episodio 1',
-  };
-}
-
-function cleanPrivateMovieTitle(value) {
-  return String(value || '')
-    .replace(/\[[^\]]*]/g, ' ')
-    .replace(/\((19|20)\d{2}\)/g, ' ')
-    .replace(/\b(19|20)\d{2}\b/g, ' ')
-    .replace(/\b(1080p|720p|4k|uhd|fhd|hd|latino|castellano|subtitulado|dual|vod|movie)\b/gi, ' ')
-    .replace(/[._]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim() || 'Sin titulo';
-}
-
-function isValidPrivateTitle(value) {
-  const title = String(value || '').trim();
-  const normalized = normalizeText(title);
-  if (title.length < 3) return false;
-  if (/^\d+$/.test(title)) return false;
-  if (/^[a-z]{0,3}\d{3,}[a-z0-9-]*$/i.test(title)) return false;
-  if (['sin titulo', 'canal', 'pelicula', 'movie', 'vod', 'live'].includes(normalized)) return false;
-  return /[a-zA-ZÀ-ÿ]/.test(title);
-}
-
-function cleanPrivateGroup(value) {
-  return String(value || '')
-    .replace(/\b(vod|movies?|peliculas?|series?|live|tv)\b/gi, ' ')
-    .replace(/[|]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function extractPrivateYear(value) {
-  const match = String(value || '').match(/\b(19\d{2}|20\d{2})\b/);
-  return match?.[1] || '';
-}
-
-function slugifyId(value) {
-  return normalizeText(value || '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 90) || Math.random().toString(36).slice(2);
-}
-
-function dedupeCatalogItems(items) {
-  return Array.from(new Map(items.map((item) => [`${normalizeText(item.titulo)}-${item.urlReproduccion || item.id}`, item])).values());
-}
-
-function mergeCatalogItems(primary, extra) {
-  return sortCatalogByYearDesc(Array.from(
-    new Map([...(primary || []), ...(extra || [])].map((item) => [`${item.categoria || 'movie'}:${item.id || item.titulo}`, item])).values(),
-  ));
-}
-
-function dedupeEpisodes(episodes) {
-  return Array.from(
-    new Map(episodes.map((episode) => [`${episode.temporada}-${episode.episodio}-${episode.urlReproduccion}`, episode])).values(),
-  ).sort((left, right) => {
-    const seasonDiff = (Number(left.temporada) || 1) - (Number(right.temporada) || 1);
-    if (seasonDiff !== 0) return seasonDiff;
-    return (Number(left.episodio) || 1) - (Number(right.episodio) || 1);
-  });
 }
 
 function getM3uAttribute(line, name) {
